@@ -22,18 +22,21 @@ def main(argv):
       elif opt in ("-o", "--ofile"):
          outputfile = arg
    if inputfile == '':
-      print 'Empty input file, exiting.'
+      print 'Unspecified input file, exiting.'
       sys.exit()
    if outputfile == '':
-      outputfile = os.path.splitext(inputfile)[0]+'.gcode'
+      outputfile = getDefaultOutputFilename(inputfile)
 
    print 'Input file is ', inputfile
    print 'Output file is ', outputfile
 
    outfile = open(outputfile,'w+')
 
-   outfile.write('; Marlin GCode converted from Pycam ngc with ngc2marlin.py')
-   outfile.write("\n")
+   outfile.write("; Marlin GCode converted from Pycam ngc with ngc2marlin.py\n")
+   outfile.write("G21\n")
+   outfile.write("G90\n")
+   outfile.write("G92 X0 Y0 Z0\n")
+   outfile.write("G1 F6000\n")
 
    with open(inputfile, 'r') as f:
       for line in f:
@@ -43,14 +46,66 @@ def main(argv):
 
 def getValidMarlinCode(gcode):
    line = gcode.rstrip("\n")
-   if line[0] == ' ': # Pycam shorthand
+   if len(line) == 0:
+      return ''
+   if line[0] == ' ': # Unsupported move in early Marlin
       line = 'G1'+line
    if line[0] == ';': # GCode Comment
       return ''
-   if line[0] == 'F': # Feedrate
-      line = 'G1 '+line
-   line = line + "\n"
-   return line
+   clauses = line.split(' ')
+   if clauses[0] in ['G2','G02']:
+      return getArcCode(line,1)
+   elif clauses[0] in ['G3','G03']:
+      return getArcCode(line,0)
+   elif clauses[0] in ['G1','G01','G0','G00']:
+      return line + "\n"
+   else:
+      return 'G1 '+line
+
+def getDefaultOutputFilename(inputfile):
+   outputfile = os.path.splitext(inputfile)[0]+'.gcode'
+   if outputfile == inputfile:
+      outputfile = os.path.splitext(inputfile)[0]+'_marlin.gcode'
+   return outputfile
+
+def getArcCode(code, cw):
+   out = ''
+   clauses = code.split(' ')
+   if arcIsIJK(code):
+      print('ijk arc: ' + code)
+      for c in clauses:
+         if c[0] == 'X':
+            x = c[1:]
+         elif c[0] == 'Y':
+            y = c[1:]
+         elif c[0] == 'Z':
+            z = c[1:]
+         elif c[0] == 'I':
+            i = c[1:]
+         elif c[0] == 'J':
+            j = c[1:]
+         elif c[0] == 'K':
+            k = c[1:]
+         elif c[0] == 'F':
+            out += 'G1 F'+c[1:]+"\n"
+      #out += 'G1
+      out += 'G1 X'+x+' Y'+y+' Z'+z+"\n" # Finish
+      return out
+   else:
+      print('r arc: ' + code)
+      for c in clauses:
+         if c[0] == 'X':
+            x = c[1:]
+         elif c[0] == 'Y':
+            y = c[1:]
+         elif c[0] == 'R':
+            R = c[1:]
+      return "\n"
+
+def arcIsIJK(code):
+   if 'R' in code:
+      return False
+   return True
 
 def showhelp():
    print 'ngc2marlin.py -i <inputfile> [-o <outputfile>]'
